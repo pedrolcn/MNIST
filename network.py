@@ -50,7 +50,7 @@ class Network(object):
         self._create_summaries()
 
 
-class Model(Network):
+class Mnist(Network):
 
     def _create_placeholders(self):
         with tf.name_scope('Inputs'):
@@ -73,8 +73,8 @@ class Model(Network):
                 self.gamma_conv2 = bn_variable(1.0, self.filters[1], name='gamma_conv2')
 
             with tf.name_scope('Readout'):
-                self.W_fc = weight_variable([7*7*64, 1024], name='readout_weight')
-                self.b_fc = bias_variable([1024], name='bias_reaout')
+                self.W_fc = weight_variable([64, 10], name='readout_weight')
+                self.b_fc = bias_variable([10], name='bias_reaout')
 
     def _create_network(self):
         with tf.device('/cpu:0'):
@@ -92,12 +92,13 @@ class Model(Network):
                 self.h_pool2 = max_pool_2x2(self.h_conv2)
 
             with tf.name_scope('Avg_pool'):
-                self.h_avg_pool = tf.nn.avg_pool(self.h_pool2, ksize=[1, 1, 1, 64], strides=[1, 1, 1, 1],
-                                                 padding='Same', name='Avg_pool')
+                self.h_avg_pool = tf.nn.avg_pool(self.h_pool2, ksize=[1, 7, 7, 1], strides=[1, 1, 1, 1],
+                                                 padding='VALID', name='Avg_pool')
                 self.h_drop = tf.nn.dropout(self.h_avg_pool, keep_prob=self.keep_prob, name='Dropout')
 
             with tf.name_scope('Readout'):
-                self.y_conv = tf.matmul(self.h_drop, self.W_fc) + self.b_fc
+                self.h_drop_flat = tf.reshape(self.h_drop, [-1, 64])
+                self.y_conv = tf.matmul(self.h_drop_flat, self.W_fc) + self.b_fc
 
     def _create_loss(self):
         with tf.device('/cpu:0'):
@@ -117,3 +118,17 @@ class Model(Network):
             tf.summary.histogram('Histogram Loss', self.loss)
 
             self.summary_op = tf.summary.merge_all()
+
+    def metrics(self, feed_dict):
+        accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(self.y_conv, 1), tf.argmax(self.y_, 1)), tf.float32))
+        return accuracy.eval(feed_dict)
+
+    def predict(self, feed_dict):
+        predict = tf.argmax(self.y_conv, 1)
+        return predict.eval(feed_dict)
+
+
+def build_feed(model, features, targets, dropout):
+
+    feed_dict = {model.x: features, model.y_: targets, model.keep_prob: dropout}
+    return feed_dict

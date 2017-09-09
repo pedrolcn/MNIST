@@ -55,7 +55,7 @@ def batch_norm(x, beta, gamma, phase_train):
             with tf.control_dependencies([ema_apply_op]):
                 return tf.identity(batch_mean), tf.identity(batch_var)
 
-        mean, var = tf.cond(phase_train, mean_var_with_update,
+        mean, var = tf.cond(tf.cast(phase_train, tf.bool), mean_var_with_update,
                             lambda: (ema.average(batch_mean), ema.average(batch_var)))
         normed = tf.nn.batch_normalization(x, mean, var, beta, gamma, 1e-3)
     return normed
@@ -85,3 +85,19 @@ class TrainBatcher(object):
             assert batch_size <= self.num_examples
         end = self.index_in_epoch
         return self.examples[start:end], self.labels[start:end]
+
+
+def preprocess(dataframe, train=True, validation_size=0):
+    if train:
+        images = np.multiply(dataframe.iloc[:, 1:].values.astype(np.float), 1.0 / 255.0)
+        labels = dense_to_one_hot(dataframe.iloc[:, 0].values.ravel(), 10)
+
+        cv_images = images[:validation_size]
+        cv_labels = labels[:validation_size]
+        train_images = images[validation_size:]
+        train_labels = labels[validation_size:]
+
+        return (train_images, train_labels), (cv_images, cv_labels)
+    else:
+        images = np.multiply(dataframe.iloc[:, 1:].values.astype(np.float), 1.0 / 255.0)
+        return images
