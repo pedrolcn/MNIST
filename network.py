@@ -1,20 +1,29 @@
 import tensorflow as tf
-from utils import weight_variable, bn_variable, conv2d, max_pool_2x2, batch_norm, bias_variable
+from tools import weight_variable, bn_variable, conv2d, max_pool_2x2, batch_norm, bias_variable
 
 """ Define the network and model class"""
 
 
 class Network(object):
     """
-    Abstract wrapper class for TensorFlow models, defintes the interfaces of the network, all the _create methods are
-    mere placeholders for the call in the build_graph method, and all shall be overridden in the child classes.
+    Abstract wrapper class for TensorFlow models, defines the interfaces a network shall have
     """
+    def __init__(self, train_data, cv_data=None, batch_size=None, learning_rate=None, kernel=None, filters=None,
+                 dropout=None, fc=None):
+        self.train_data = train_data
 
-    def __init__(self, batch_size, learning_rate, kernel, filters, fc):
+        if cv_data:
+            self._cross_validate = True
+            self.cv_data = cv_data
+        else:
+            self._cross_validate = False
+
+        # Hyperparams
         self.batch_size = batch_size
         self.lr = learning_rate
         self.kernel = kernel
         self.filters = filters
+        self.dropout = dropout
         self.fc = fc
         self.global_step = tf.Variable(0, dtype=tf.int32, trainable=False, name='global_step')
         self._phase_train = True
@@ -22,6 +31,10 @@ class Network(object):
     @property
     def phase_train(self):
         return self._phase_train
+
+    @property
+    def cross_validate(self):
+        return self._cross_validate
 
     def _create_placeholders(self):
         raise NotImplementedError
@@ -51,7 +64,10 @@ class Network(object):
 
 
 class Mnist(Network):
-
+    """
+    Model for predicting handwritten digit from the MNIST Database. The network implemented is very simillar to the
+    TensorFlow tutorial
+    """
     def _create_placeholders(self):
         with tf.name_scope('Inputs'):
             self.keep_prob = tf.placeholder(tf.float32)
@@ -108,9 +124,10 @@ class Mnist(Network):
 
     def _create_optimizer(self):
         with tf.device('/cpu:0'):
-            # Adam optimizer as usual
-            self.train_op = tf.train.AdamOptimizer(self.lr).minimize(self.loss,
-                                                                     global_step=self.global_step)
+            with tf.name_scope('Trainer'):
+                # Adam optimizer as usual
+                self.train_op = tf.train.AdamOptimizer(self.lr).minimize(self.loss,
+                                                                         global_step=self.global_step)
 
     def _create_summaries(self):
         with tf.name_scope('Summaries'):
@@ -119,7 +136,22 @@ class Mnist(Network):
 
             self.summary_op = tf.summary.merge_all()
 
-    def metrics(self, feed_dict):
+    def build_feed(self, batch):
+        if self._phase_train:
+            feed_dict = {self.x: batch['features'], self.y_: batch['labels'], self.keep_prob: self.dropout}
+        else:
+            feed_dict = {self.x: batch['features'], self.y_: batch['labels'], self.keep_prob: 1.0}
+
+        return feed_dict
+
+    def metrics(self, batch):
+        if self._phase_train:
+            self._phase_train = False
+            feed_dict = self.build_feed(batch)
+            self._phase_train = True
+        else:
+            feed_dict = self.build_feed(batch)
+
         accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(self.y_conv, 1), tf.argmax(self.y_, 1)), tf.float32))
         return accuracy.eval(feed_dict)
 
@@ -127,8 +159,31 @@ class Mnist(Network):
         predict = tf.argmax(self.y_conv, 1)
         return predict.eval(feed_dict)
 
+    def train(self, sess, num_iter, saver=None, logging=100, saving=1000):
+        sess.run(tf.global_variables_initializer())
+        train_writer = tf.summary.FileWriter('C:\\Users\\pedro_000\\PyProjects\\MNIST\\logdir')
+        train_writer.add_graph(graph=tf.get_default_graph())
 
-def build_feed(model, features, targets, dropout):
+        print('Starting training...')
 
-    feed_dict = {model.x: features, model.y_: targets, model.keep_prob: dropout}
-    return feed_dict
+        for i in range(num_iter):
+            batch = self.train_data.next_batch(self.batch_size)
+            train_feed = self.build_feed(batch)
+
+            if i % logging == 0:
+                train_accuracy = self.metrics(batch)
+
+                if self.cross_validate:
+                    cv_accuracy = self.metrics(self.cv_data)
+                    print("step %d, Training accuracy: %g, CV accuracy: %g" % (i, train_accuracy, cv_accuracy))
+                else:
+                    print("step %d, Training accuracy: %g" % (i, train_accuracy))
+
+                summary = sess.run(self.summary_op, feed_dict=train_feed)
+                train_writer.add_summary(summary, global_step=i)
+
+            if i % saving == 0:
+                saver.save(sess, './checkpoints/chck', global_step=self.global_step)
+
+            self.train_op.run(feed_dict=train_feed)
+        print('Training finished')

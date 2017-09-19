@@ -1,7 +1,6 @@
 import pandas as pd
-from utils import preprocess
-from network import Mnist, build_feed
-from utils import TrainBatcher
+from tools import preprocess, TrainBatcher
+from network import Mnist
 import tensorflow as tf
 
 # Filepaths
@@ -13,7 +12,7 @@ TEST_SET = 'test.csv'
 LEARNING_RATE = 1.2e-3
 MAX_ITERATIONS = 5000
 BATCH_SIZE = 64
-VALIDATION_SIZE = 0
+VALIDATION_SIZE = 100
 
 
 def read_data(path, train, test):
@@ -27,27 +26,19 @@ def read_data(path, train, test):
 
 def main():
     train_df, test_df = read_data(PATH, TRAIN_SET, TEST_SET)
-    (train_images, train_labels), (cv_images, cv_labels) = preprocess(train_df, validation_size=0)
+    (train_images, train_labels), (cv_images, cv_labels) = preprocess(train_df, validation_size=VALIDATION_SIZE)
+    cross = {'features': cv_images, 'labels': cv_labels}
 
     data = TrainBatcher(train_images, train_labels)
-    model = Mnist(batch_size=BATCH_SIZE, learning_rate=LEARNING_RATE, kernel=5, filters=[32, 64], fc=1024)
+    model = Mnist(data, cv_data=cross, batch_size=BATCH_SIZE, learning_rate=LEARNING_RATE, kernel=5, filters=[32, 64],
+                  dropout=0.5, fc=1024)
     model.build_graph()
 
     # Training
-    with tf.Session() as sess:
-        sess.run(tf.global_variables_initializer())
-        print('Starting training...')
-        for i in range(MAX_ITERATIONS):
-            batch_xs, batch_ys = data.next_batch(BATCH_SIZE)
-            train_feed = build_feed(model, batch_xs, batch_ys, 0.5)
-            train_eval_feed = build_feed(model, batch_xs, batch_ys, 1.0)
+    saver = tf.train.Saver()
 
-            if i % 100 == 0:
-                train_accuracy = model.metrics(train_eval_feed)
-                print("step %d, Training accuracy: %g"
-                      % (i, train_accuracy))
-            model.train_op.run(feed_dict=train_feed)
-        print('Training finished')
+    with tf.Session() as sess:
+        model.train(sess, 1000, saver)
 
 if __name__ == '__main__':
     main()

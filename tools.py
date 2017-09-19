@@ -24,15 +24,6 @@ def conv2d(x, w):
 def max_pool_2x2(x):
     return tf.nn.max_pool(x, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
 
-
-def dense_to_one_hot(labels_dense, num_classes):
-    num_labels = labels_dense.shape[0]
-    index_offset = np.arange(num_labels) * num_classes
-    labels_one_hot = np.zeros((num_labels, num_classes))
-    labels_one_hot.flat[index_offset + labels_dense.ravel()] = 1
-    return labels_one_hot
-
-
 def batch_norm(x, beta, gamma, phase_train):
     """
     Batch normalization on convolutional maps.
@@ -84,7 +75,8 @@ class TrainBatcher(object):
             self.index_in_epoch = batch_size
             assert batch_size <= self.num_examples
         end = self.index_in_epoch
-        return self.examples[start:end], self.labels[start:end]
+        batch = {'features': self.examples[start:end], 'labels': self.labels[start:end]}
+        return batch
 
 
 def preprocess(dataframe, train=True, validation_size=0):
@@ -101,3 +93,11 @@ def preprocess(dataframe, train=True, validation_size=0):
     else:
         images = np.multiply(dataframe.iloc[:, 1:].values.astype(np.float), 1.0 / 255.0)
         return images
+
+
+def dense_to_one_hot(labels_dense, num_classes):
+    num_labels = labels_dense.shape[0]
+    index_offset = np.arange(num_labels) * num_classes
+    labels_one_hot = np.zeros((num_labels, num_classes))
+    labels_one_hot.flat[index_offset + labels_dense.ravel()] = 1
+    return labels_one_hot
